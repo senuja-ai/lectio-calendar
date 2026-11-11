@@ -15,7 +15,7 @@ run_worker_first = true
 # and paste the id it prints below.
 [[kv_namespaces]]
 binding = "TIMETABLE"
-id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+id = "745ce922b6084ee98b536a9da8d6e9e1"
 
 # Weeks to include around the current one. SCHOOL_ID, CLASS_ID, UPLOAD_TOKEN
 # and FEED_TOKEN are secrets: set them with `npx wrangler secret put NAME`.
