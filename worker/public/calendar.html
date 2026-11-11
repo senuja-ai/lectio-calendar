@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Timetable</title>
+<script>
+  // Apply the saved theme before first paint (no light/dark flash).
+  try { const t = localStorage.getItem("lectio-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
+<style>
+  :root {
+    --bg: #f5f3ee; --panel: #fffdf9; --ink: #1f2430; --muted: #6b7080; --faint: #a3a6b0;
+    --line: #e6e2d9; --line-strong: #d6d1c5; --accent: #2f5bd3; --now: #e0533d; --hover: rgba(31,36,48,.05);
+    --shadow: 0 1px 2px rgba(31,36,48,.06), 0 8px 24px rgba(31,36,48,.06);
+    --hour: 56px; --radius: 10px; color-scheme: light;
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171c; --panel: #1c1f26; --ink: #ecedf0; --muted: #9a9eab; --faint: #646875;
+    --line: #2a2e37; --line-strong: #363b46; --accent: #7d9cff; --now: #ff7a63; --hover: rgba(255,255,255,.05);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171c; --panel: #1c1f26; --ink: #ecedf0; --muted: #9a9eab; --faint: #646875;
+      --line: #2a2e37; --line-strong: #363b46; --accent: #7d9cff; --now: #ff7a63; --hover: rgba(255,255,255,.05);
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); transition: background .2s, color .2s; }
+  body { min-height: 100vh; padding: 28px clamp(12px, 3vw, 40px) 40px; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* ---------- Layout ---------- */
+  .page { max-width: 1560px; margin: 0 auto; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 24px; align-items: start; }
+  header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
+  .titles { flex: 1 1 280px; }
+  .eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  h1 { margin: 4px 0 0; font-size: clamp(24px, 3vw, 34px); font-weight: 700; letter-spacing: -.02em; }
+  h1 .range { color: var(--muted); font-weight: 500; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .pair { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); overflow: hidden; }
+  .pair button { border: 0; background: none; width: 40px; height: 42px; font-size: 18px; }
+  .pair button:first-child { border-right: 1px solid var(--line-strong); }
+  .pair button:last-child { border-left: 1px solid var(--line-strong); }
+  .week { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 132px;
+          padding: 0 14px; line-height: 1.15; }
+  .week b { font-size: 13.5px; font-weight: 650; }
+  .week span { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .week.current b::after { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+                           background: var(--accent); margin-left: 6px; vertical-align: 2px; }
+  .pair button:hover { background: var(--hover); }
+  .btn { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 999px; padding: 8px 14px;
+         font-size: 14px; font-weight: 500; height: 38px; display: inline-flex; align-items: center; gap: 8px; }
+  .btn:hover { background: var(--hover); }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--ink); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.08); background: var(--accent); }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .split { display: inline-flex; }
+  .split .btn:first-child { border-radius: 999px 0 0 999px; }
+  .split .more { border-radius: 0 999px 999px 0; padding: 0 12px; margin-left: 1px; }
+  .ways { display: grid; gap: 10px; margin: 6px 0 4px; }
+  .way { display: flex; gap: 14px; align-items: center; text-align: left; width: 100%; border: 1px solid var(--line-strong);
+         background: var(--panel); border-radius: 12px; padding: 12px 14px; text-decoration: none; color: inherit; }
+  .way:hover { background: var(--hover); }
+  .way b { display: block; font-size: 14px; }
+  .way span { font-size: 12.5px; color: var(--muted); }
+  .way .ic { font-size: 20px; width: 26px; text-align: center; flex: none; }
+  .note { font-size: 12.5px; background: var(--bg); border-radius: 10px; padding: 10px 12px; color: var(--muted); line-height: 1.5; }
+  .sync { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; width: 100%; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #3cb371; }
+  .dot.stale { background: #e3a008; }
+
+  /* Theme switch */
+  .theme { position: relative; width: 62px; height: 32px; border-radius: 999px; border: 1px solid var(--line-strong);
+           background: var(--panel); padding: 0; display: inline-flex; align-items: center; justify-content: space-between; font-size: 14px; }
+  .theme span { width: 30px; text-align: center; z-index: 1; transition: opacity .2s; }
+  .theme::before { content: ""; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 50%;
+                   background: var(--accent); transition: transform .25s ease; }
+  .theme.is-dark::before { transform: translateX(30px); }
+  .theme .sun { opacity: .95; } .theme .moon { opacity: .5; }
+  .theme.is-dark .sun { opacity: .5; } .theme.is-dark .moon { opacity: .95; }
+
+  /* ---------- Sidebar ---------- */
+  aside.filters { position: sticky; top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+                  box-shadow: var(--shadow); padding: 16px 14px; max-height: calc(100vh - 32px); overflow-y: auto; }
+  .fhead { display: flex; align-items: center; justify-content: space-between; margin: 4px 4px 10px; }
+  .fhead h3 { margin: 0; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .fhead .links button { border: 0; background: none; color: var(--accent); font-size: 12px; padding: 2px 4px; }
+  .fsec + .fsec { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .toggle { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-radius: 8px; cursor: pointer; user-select: none; }
+  .toggle:hover { background: var(--hover); }
+  .toggle .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .toggle .lbl { flex: 1; font-size: 13.5px; line-height: 1.25; min-width: 0; }
+  .toggle .lbl small { display: block; color: var(--faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .toggle .track { width: 30px; height: 18px; border-radius: 999px; background: var(--line-strong); position: relative; flex: none; transition: background .15s; }
+  .toggle .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+                          box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+  .toggle input:checked + .track { background: var(--accent); }
+  .toggle input:checked + .track::after { transform: translateX(12px); }
+  .toggle input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .toggle.off .lbl { color: var(--faint); }
+  .fnote { font-size: 12px; color: var(--muted); margin: 14px 6px 0; line-height: 1.5; }
+  .filter-btn { display: none; }
+  .linkish { border: 0; background: none; padding: 0; color: var(--accent); font-size: 12px; text-decoration: underline; }
+
+  /* ---------- Calendar ---------- */
+  .cal { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .days-head, .allday, .grid { display: grid; grid-template-columns: 56px repeat(var(--days), minmax(0, 1fr)); }
+  .days-head { border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 5; }
+  .day-name { padding: 12px 10px 10px; border-left: 1px solid var(--line); display: flex; align-items: baseline; gap: 8px; }
+  .day-name .dow { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  .day-name .num { font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+  .day-name.today .num { background: var(--accent); color: #fff; border-radius: 999px; min-width: 34px; height: 34px;
+                         display: inline-grid; place-items: center; font-size: 17px; }
+  .day-name.today .dow { color: var(--accent); }
+  .allday { border-bottom: 1px solid var(--line); }
+  .allday .gutter { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; padding: 8px 6px; text-align: right; }
+  .allday .cell { border-left: 1px solid var(--line); padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .chip { font-size: 12px; padding: 4px 8px; border-radius: 6px; background: var(--chip-bg); color: var(--chip-ink);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; text-align: left; }
+  .chip.cancelled { text-decoration: line-through; opacity: .6; }
+  .scroll { max-height: calc(100vh - 230px); overflow-y: auto; }
+  .grid { position: relative; }
+  .times { position: relative; }
+  .times span { position: absolute; right: 8px; transform: translateY(-50%); font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .col { position: relative; border-left: 1px solid var(--line);
+         background-image: linear-gradient(to bottom, var(--line) 1px, transparent 1px); background-size: 100% var(--hour); }
+  .col.today { background-color: color-mix(in srgb, var(--accent) 4%, transparent); }
+  .now { position: absolute; left: 0; right: 0; height: 2px; background: var(--now); z-index: 3; pointer-events: none; }
+  .now::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--now); }
+  .ev { position: absolute; border: 0; text-align: left; border-radius: 8px; padding: 5px 7px 5px 9px; overflow: hidden;
+        background: var(--ev-bg); color: var(--ev-ink); box-shadow: inset 3px 0 0 var(--ev-bar);
+        transition: transform .12s, box-shadow .12s; font-size: 12px; line-height: 1.3; z-index: 2; }
+  .ev:hover, .ev:focus-visible { transform: translateY(-1px); box-shadow: inset 3px 0 0 var(--ev-bar), 0 6px 16px rgba(0,0,0,.12); z-index: 4; outline: none; }
+  .ev .t { font-weight: 650; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ev .m { opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .ev.short .t { -webkit-line-clamp: 1; }
+  .ev.short .m.room { display: none; }
+  .ev.cancelled { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ev-bg) 55%, transparent) 0 6px, transparent 6px 12px), var(--panel);
+                  box-shadow: inset 3px 0 0 var(--faint); color: var(--muted); }
+  .ev.cancelled .t { text-decoration: line-through; }
+  .badge { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; padding: 1px 5px;
+           border-radius: 4px; background: var(--now); color: #fff; vertical-align: 1px; margin-right: 4px; }
+  .state { padding: 80px 20px; text-align: center; color: var(--muted); line-height: 1.6; }
+
+  /* ---------- Sheets & dialogs ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(15,17,22,.35); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20; }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  .sheet { position: fixed; top: 0; right: 0; height: 100%; width: min(420px, 100%); background: var(--panel);
+           box-shadow: -10px 0 40px rgba(0,0,0,.18); transform: translateX(105%); transition: transform .25s ease;
+           z-index: 21; padding: 28px; overflow-y: auto; }
+  .sheet.open { transform: none; }
+  .sheet .swatch { width: 44px; height: 6px; border-radius: 3px; margin-bottom: 16px; }
+  .sheet h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -.01em; }
+  .sheet .when { color: var(--muted); margin-bottom: 20px; }
+  .sheet dl { display: grid; grid-template-columns: 86px 1fr; gap: 10px 12px; margin: 0 0 20px; font-size: 14px; }
+  .sheet dt { color: var(--muted); } .sheet dd { margin: 0; }
+  .sheet .notes { white-space: pre-wrap; font-size: 14px; line-height: 1.55; background: var(--bg); border-radius: var(--radius); padding: 14px; }
+  .sheet .hint { margin-top: 24px; font-size: 12px; color: var(--faint); }
+  .dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -46%); opacity: 0; pointer-events: none;
+            width: min(460px, calc(100% - 24px)); background: var(--panel); border-radius: 18px; padding: 26px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.25); z-index: 22; transition: opacity .2s, transform .2s; }
+  .dialog.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+  .dialog h2 { margin: 0 0 12px; font-size: 20px; }
+  .dialog { max-height: calc(100vh - 32px); overflow-y: auto; width: min(560px, calc(100% - 24px)); }
+  .steps { list-style: none; counter-reset: step; padding: 0; margin: 4px 0 16px; display: grid; gap: 14px; }
+  .steps li { counter-increment: step; position: relative; padding-left: 40px; }
+  .steps li::before { content: counter(step); position: absolute; left: 0; top: -1px; width: 26px; height: 26px; border-radius: 50%;
+                      background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center; }
+  .steps li > b { display: block; font-size: 14.5px; margin-bottom: 3px; }
+  .steps li > span { display: block; font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+  .steps.compact li > span { font-size: 13px; }
+  .steps.compact { margin-top: 18px; }
+  .dialog .way { margin-top: 12px; }
+  .dialog > p + .linkbox { margin-top: 2px; }
+  .steps a { color: var(--accent); }
+  .step-btn { margin-top: 8px; text-decoration: none; }
+  kbd { font: 600 11.5px/1 inherit; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 2px 5px; background: var(--panel); }
+  .linkbox { display: flex; gap: 8px; margin-top: 8px; }
+  .linkbox input { flex: 1; min-width: 0; font: 12px ui-monospace, Consolas, monospace; color: var(--ink); background: var(--bg);
+                   border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 10px; height: 38px; }
+  .note ul { margin: 6px 0 0; padding-left: 18px; } .note li { margin: 3px 0; }
+  .note.warn { background: color-mix(in srgb, #e3a008 16%, var(--panel)); color: var(--ink); }
+  .dialog p { margin: 0 0 14px; color: var(--muted); line-height: 1.55; font-size: 14px; }
+  .dialog .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+  .dialog code { font-size: 12px; background: var(--bg); padding: 2px 5px; border-radius: 5px; }
+  .cicon { width: 16px; height: 16px; flex: none; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: var(--ink); color: var(--panel);
+           padding: 10px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: .2s; pointer-events: none; z-index: 30; max-width: 90vw; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- Narrow screens ---------- */
+  .daytabs { display: none; }
+  @media (max-width: 980px) {
+    .page { grid-template-columns: minmax(0, 1fr); }
+    aside.filters { position: fixed; top: 0; left: 0; bottom: 0; width: min(300px, 86vw); max-height: none; border-radius: 0 16px 16px 0;
+                    z-index: 21; transform: translateX(-105%); transition: transform .25s ease; }
+    aside.filters.open { transform: none; }
+    .filter-btn { display: inline-flex; }
+  }
+  @media (max-width: 720px) {
+    body { padding: 18px 10px 30px; }
+    .daytabs { display: flex; gap: 6px; overflow-x: auto; }
+    .daytabs button { flex: 1; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 12px; padding: 8px 4px; min-width: 52px; }
+    .daytabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .daytabs .dow { display: block; font-size: 11px; opacity: .8; text-transform: uppercase; }
+    .daytabs .num { font-size: 17px; font-weight: 650; }
+    .days-head { display: none; }
+    .scroll { max-height: none; }
+    :root { --hour: 64px; }
+    .ev { font-size: 13px; }
+    .btn .wide { display: none; }
+    #subscribe span:last-child { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="titles">
+      <div class="eyebrow" id="eyebrow">Class timetable</div>
+      <h1 id="heading">Loading…</h1>
+    </div>
+    <div class="controls">
+      <button class="btn filter-btn" id="filterBtn">☰ Subjects</button>
+      <div class="pair" role="group" aria-label="Change week">
+        <button id="prev" aria-label="Previous week" title="Previous week (←)">‹</button>
+        <div class="week" id="weekLabel" aria-live="polite"><b>Week –</b><span></span></div>
+        <button id="next" aria-label="Next week" title="Next week (→)">›</button>
+      </div>
+      <button class="btn ghost" id="today" title="Back to this week (T)">This week</button>
+      <button class="theme" id="theme" role="switch" aria-label="Dark mode" title="Light / dark"><span class="sun">☀</span><span class="moon">☾</span></button>
+      <div class="split">
+        <button class="btn primary" id="subscribe" title="Copies your personal calendar link and shows how to add it">
+          <svg class="cicon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.5 6.5h13M5 1v3M11 1v3" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Add to Google Calendar</span></button>
+        <button class="btn primary more" id="moreWays" aria-label="Apple Calendar, Outlook and other apps" title="Apple Calendar, Outlook…">▾</button>
+      </div>
+    </div>
+    <div class="sync" id="sync"></div>
+  </header>
+
+  <aside class="filters" id="filters" aria-label="Show subjects"></aside>
+
+  <div>
+    <nav class="daytabs" id="daytabs" aria-label="Day" style="margin-bottom:12px"></nav>
+    <main class="cal" id="cal"><div class="state">Loading timetable…</div></main>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"></aside>
+<section class="dialog" id="dialog" role="dialog" aria-modal="true"></section>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------
+// Setup. Page URL: /class/{school}/{class}#key=CALENDAR_KEY
+// ---------------------------------------------------------------------------
+const parts = location.pathname.split("/").filter(Boolean);
+// The key lives after "#" (never sent to the server). Old "?key=" links are
+// moved into the fragment immediately so they also stop appearing in logs.
+const KEY = new URLSearchParams(location.hash.slice(1)).get("key") || new URLSearchParams(location.search).get("key") || "";
+if (new URLSearchParams(location.search).has("key")) history.replaceState(null, "", `${location.pathname}#key=${encodeURIComponent(KEY)}`);
+const API = `/api/v1/class/${parts[1]}/${parts[2]}`;
+// Filter choices: defaults plus the student's own overrides (v2 = new defaults).
+const STORE = `lectio-filter-v2-${parts[2]}`;
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+const SUBJECTS = {
+  ma: "Mathematics", fy: "Physics", bi: "Biology", ke: "Chemistry", ps: "Psychology", art: "Visual Arts",
+  en: "English", da: "Danish", "eø": "Economics", hi: "History", tok: "Theory of Knowledge", ge: "Geography",
+  sp: "Spanish", ty: "German", fr: "French", mu: "Music", it: "Computer Science", cas: "CAS", ee: "Extended Essay"
+};
+const SUBJECT_HUES = {ma: 218, fy: 192, bi: 128, ke: 165, ps: 328, art: 282, en: 14, da: 44,
+                      "eø": 84, hi: 250, tok: 0, ge: 104, sp: 30, ty: 300, fr: 236, it: 178, mu: 312};
+const HUES = [218, 14, 128, 282, 44, 192, 328, 84, 250, 0, 165, 30];
+const media = matchMedia("(prefers-color-scheme: dark)");
+const isDark = () => (document.documentElement.dataset.theme || (media.matches ? "dark" : "light")) === "dark";
+
+let DATA = null, EVENTS = [], GROUPS = new Map(), hidden = new Set();
+const saved = store.get(STORE, {on: [], off: []});
+const overrides = {on: new Set(saved.on), off: new Set(saved.off)};
+
+// Defaults (subjects + school/class events on, clubs off) are decided by the
+// server, so this page and every subscription link always agree.
+const defaultOn = g => g.defaultOn;
+function recomputeHidden() {
+  hidden = new Set([...GROUPS.values()].filter(g => overrides.off.has(g.id) || (!overrides.on.has(g.id) && !defaultOn(g))).map(g => g.id));
+}
+function setShown(id, on) {
+  const g = GROUPS.get(id);
+  overrides.on.delete(id); overrides.off.delete(id);
+  if (on !== defaultOn(g)) (on ? overrides.on : overrides.off).add(id);   // Only store differences.
+  store.set(STORE, {on: [...overrides.on], off: [...overrides.off]});
+}
+let weekStart = mondayOf(new Date()), mobileDay = null;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function mondayOf(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function parseLocal(s) { const [a, b = "00:00"] = s.split("T"); const [y, m, d] = a.split("-").map(Number); const [h, mi] = b.split(":").map(Number); return new Date(y, m - 1, d, h, mi); }
+function hm(d) { return d.toLocaleTimeString("en-GB", {hour: "2-digit", minute: "2-digit"}); }
+function isoWeek(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7)); return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])); }
+function hashHue(code) { if (code in SUBJECT_HUES) return SUBJECT_HUES[code]; let h = 0; for (const c of code) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; }
+
+// "3i psHL, 3i psSL" -> {code:"ps", name:"Psychology", level:"HL/SL"}; "3i enASL" -> English, "A SL".
+function courseInfo(course) {
+  if (!course) return null;
+  const levels = [];
+  let code = null;
+  for (const part of course.split(",")) {
+    const p = part.trim().replace(/^\S+\s+/, "");                 // drop class prefix ("3i")
+    const m = p.match(/^([A-Za-zæøåÆØÅ][a-zæøå]*)(.*)$/);
+    if (!m) continue;
+    code = code || m[1].toLowerCase();
+    const lvl = m[2].trim().replace(/^(A|B)(?=HL|SL)/, "$1 ");
+    if (lvl && !levels.includes(lvl)) levels.push(lvl);
+  }
+  if (!code) return null;
+  // "A HL" + "A SL" -> "A HL/SL"; "HL" + "SL" -> "HL/SL".
+  const ab = levels.map(l => l.match(/^(A|B) (HL|SL)$/));
+  const level = levels.length > 1 && ab.every(m => m && m[1] === ab[0][1])
+    ? `${ab[0][1]} ${ab.map(m => m[2]).join("/")}` : levels.join("/");
+  return {code, name: SUBJECTS[code] || code.toUpperCase(), level};
+}
+function colours(code) {
+  if (!code) return isDark() ? {bg: "hsl(220 10% 24%)", ink: "#d6d8de", bar: "hsl(220 8% 60%)"}
+                             : {bg: "hsl(40 14% 92%)", ink: "#3b3f4a", bar: "hsl(220 8% 60%)"};
+  const h = hashHue(code);
+  return isDark() ? {bg: `hsl(${h} 35% 24%)`, ink: `hsl(${h} 60% 88%)`, bar: `hsl(${h} 70% 62%)`}
+                  : {bg: `hsl(${h} 75% 93%)`, ink: `hsl(${h} 45% 24%)`, bar: `hsl(${h} 65% 52%)`};
+}
+function displayTitle(e) {
+  const g = GROUPS.get(e.group);
+  if (g.kind !== "course") return {main: e.title, sub: ""};
+  const label = g.name + (g.level ? " " + g.level : "");
+  const titleIsCode = !e.title || e.title === e.course;
+  return {main: titleIsCode ? label : e.title, sub: titleIsCode ? "" : label};
+}
+function cleanNotes(e) {
+  return (e.notes || "").split("\n").filter(l => {
+    const t = l.trim();
+    return t && t !== e.title && !/^\d{1,2}\/\d{1,2}-\d{4}/.test(t) && !/^(ændret|aflyst|cancelled)!?$/i.test(t);
+  }).join("\n");
+}
+const visibleEvents = () => EVENTS.filter(e => !hidden.has(e.group));
+
+// ---------------------------------------------------------------------------
+// Sidebar: one toggle per course (HL/SL groups differ between students) and
+// per club/event. Choices are remembered in this browser.
+// ---------------------------------------------------------------------------
+function buildGroups() {
+  GROUPS = new Map();
+  for (const e of EVENTS) {
+    if (GROUPS.has(e.group)) { GROUPS.get(e.group).count++; continue; }
+    // A "course" that is only the class name ("3i") is a class-wide event, not a subject.
+    const classWide = e.kind === "course" && /^\S+$/.test(e.course.trim());
+    const info = e.kind === "course" && !classWide ? courseInfo(e.course) : null;
+    GROUPS.set(e.group, info
+      ? {id: e.group, kind: "course", code: info.code, name: info.name, level: info.level, course: e.course, count: 1, defaultOn: e.default_on !== false}
+      : {id: e.group, kind: "event", code: null, name: e.title, level: "", course: "", count: 1, defaultOn: e.default_on !== false});
+  }
+  recomputeHidden();
+}
+function renderFilters() {
+  const groups = [...GROUPS.values()];
+  const courses = groups.filter(g => g.kind === "course").sort((a, b) => a.name.localeCompare(b.name) || a.level.localeCompare(b.level));
+  const events = groups.filter(g => g.kind === "event")
+    .sort((a, b) => defaultOn(b) - defaultOn(a) || b.count - a.count || a.name.localeCompare(b.name));
+  const item = g => {
+    const c = colours(g.code), on = !hidden.has(g.id);
+    const sub = g.kind === "course" ? `${esc(g.course)}`
+      : `${defaultOn(g) ? "School/class event" : "Optional"} · ${g.count} ${g.count === 1 ? "time" : "times"}`;
+    return `<label class="toggle ${on ? "" : "off"}"><span class="sw" style="background:${c.bar}"></span>
+      <span class="lbl">${esc(g.name)}${g.level ? " " + esc(g.level) : ""}<small>${sub}</small></span>
+      <input type="checkbox" data-group="${g.id}" ${on ? "checked" : ""}><span class="track"></span></label>`;
+  };
+  const section = (title, list, kind) => list.length ? `<div class="fsec"><div class="fhead"><h3>${title}</h3>
+      <span class="links"><button data-all="${kind}">All</button><button data-none="${kind}">None</button></span></div>
+      ${list.map(item).join("")}</div>` : "";
+  $("filters").innerHTML = section("Subjects", courses, "course") + section("Clubs &amp; events", events, "event")
+    + `<p class="fnote">Switch off the subjects you don't take, and switch on any clubs you join. Your choices are saved in this browser and built into your personal calendar link.`
+    + (overrides.on.size || overrides.off.size ? ` <button class="linkish" id="resetFilters">Reset to defaults</button>` : "") + `</p>`;
+}
+$("filters").addEventListener("change", e => {
+  const id = e.target.dataset.group; if (!id) return;
+  setShown(id, e.target.checked); recomputeHidden(); renderFilters(); render();
+});
+$("filters").addEventListener("click", e => {
+  if (e.target.id === "resetFilters") {
+    overrides.on.clear(); overrides.off.clear(); store.set(STORE, {on: [], off: []});
+    recomputeHidden(); renderFilters(); render(); return;
+  }
+  const all = e.target.dataset.all, none = e.target.dataset.none;
+  if (!all && !none) return;
+  for (const g of GROUPS.values()) if (g.kind === (all || none)) setShown(g.id, !!all);
+  recomputeHidden(); renderFilters(); render();
+});
+
+// ---------------------------------------------------------------------------
+// Week grid
+// ---------------------------------------------------------------------------
+function render() {
+  const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
+  const weekEvents = visibleEvents().filter(e => e._end > weekStart && e._start < addDays(weekStart, 7));
+  const shown = days.filter((d, i) => i < 5 || weekEvents.some(e => !e.all_day && ymd(e._start) === ymd(d)));
+  const todayKey = ymd(new Date());
+  const narrow = matchMedia("(max-width: 720px)").matches;
+  if (narrow && (!mobileDay || !shown.some(d => ymd(d) === mobileDay)))
+    mobileDay = shown.some(d => ymd(d) === todayKey) ? todayKey : ymd(shown[0]);
+  const visible = narrow ? shown.filter(d => ymd(d) === mobileDay) : shown;
+
+  const last = shown[shown.length - 1], fmt = (d, o) => d.toLocaleDateString("en-GB", o);
+  // Big title = month + year; the exact week sits between the arrows.
+  const isCurrent = ymd(weekStart) === ymd(mondayOf(new Date()));
+  const monthTitle = weekStart.getMonth() === last.getMonth() ? fmt(weekStart, {month: "long"})
+                   : `${fmt(weekStart, {month: "short"})} – ${fmt(last, {month: "short"})}`;
+  $("eyebrow").innerHTML = className() ? `<span style="text-transform:none">${esc(className())}</span> · Timetable` : "Class timetable";
+  $("heading").innerHTML = `${esc(monthTitle)} <span class="range">${last.getFullYear()}</span>`;
+  $("weekLabel").className = "week" + (isCurrent ? " current" : "");
+  $("weekLabel").innerHTML = `<b>Week ${isoWeek(weekStart)}</b><span>${weekStart.getDate()} ${esc(fmt(weekStart, {month: "short"}))} – ${last.getDate()} ${esc(fmt(last, {month: "short"}))}</span>`;
+  $("today").style.visibility = isCurrent ? "hidden" : "visible";
+  $("daytabs").innerHTML = shown.map(d => `<button class="${ymd(d) === mobileDay ? "on" : ""}" data-day="${ymd(d)}"><span class="dow">${fmt(d, {weekday: "short"})}</span><span class="num">${d.getDate()}</span></button>`).join("");
+
+  const timed = weekEvents.filter(e => !e.all_day);
+  let startH = 8, endH = 16;
+  for (const e of timed) { startH = Math.min(startH, e._start.getHours()); endH = Math.max(endH, e._end.getHours() + (e._end.getMinutes() ? 1 : 0)); }
+  endH = Math.min(24, Math.max(endH, startH + 1));
+  const HOUR = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hour"));
+  const cal = $("cal");
+  cal.style.setProperty("--days", visible.length);
+
+  if (!weekEvents.length) {
+    const any = EVENTS.some(e => e._end > weekStart && e._start < addDays(weekStart, 7));
+    cal.innerHTML = `<div class="state">${any ? "Everything this week is switched off in the subject list." : "No lessons this week."}<br><small>${any ? "" : "The calendar covers the weeks the extension last synchronized."}</small></div>`;
+    return;
+  }
+  let html = `<div class="days-head"><div></div>${visible.map(d => `<div class="day-name ${ymd(d) === todayKey ? "today" : ""}"><span class="dow">${fmt(d, {weekday: "short"})}</span><span class="num">${d.getDate()}</span></div>`).join("")}</div>`;
+  const alldayCells = visible.map(d => weekEvents.filter(e => e.all_day && e._start < addDays(d, 1) && e._end > d));
+  if (alldayCells.some(c => c.length)) {
+    html += `<div class="allday"><div class="gutter">All day</div>${alldayCells.map(list => `<div class="cell">${list.map(e => {
+      const c = colours(GROUPS.get(e.group).code);
+      return `<button class="chip ${e.cancelled ? "cancelled" : ""}" data-id="${e._idx}" style="--chip-bg:${c.bg};--chip-ink:${c.ink}" title="${esc(e.title)}">${esc(displayTitle(e).main)}</button>`;
+    }).join("")}</div>`).join("")}</div>`;
+  }
+  html += `<div class="scroll" id="scroll"><div class="grid" style="height:${(endH - startH) * HOUR}px"><div class="times">`;
+  for (let h = startH + 1; h < endH; h++) html += `<span style="top:${(h - startH) * HOUR}px">${String(h).padStart(2, "0")}:00</span>`;
+  html += `</div>`;
+  for (const d of visible) {
+    const list = timed.filter(e => ymd(e._start) === ymd(d)).sort((a, b) => a._start - b._start || b._end - a._end);
+    layoutColumns(list);
+    html += `<div class="col ${ymd(d) === todayKey ? "today" : ""}">`;
+    for (const e of list) {
+      const top = ((e._start.getHours() - startH) * 60 + e._start.getMinutes()) / 60 * HOUR;
+      const h = Math.max(22, (e._end - e._start) / 36e5 * HOUR - 2), w = 100 / e._cols;
+      const c = colours(GROUPS.get(e.group).code), t = displayTitle(e);
+      html += `<button class="ev ${e.cancelled ? "cancelled" : ""} ${h < 52 ? "short" : ""}" data-id="${e._idx}"
+        style="top:${top + 1}px;height:${h}px;left:calc(${e._col * w}% + 3px);width:calc(${w}% - 6px);--ev-bg:${c.bg};--ev-ink:${c.ink};--ev-bar:${c.bar}"
+        title="${esc(t.main)} · ${hm(e._start)}–${hm(e._end)}">
+        <div class="t">${e.cancelled ? '<span class="badge">AFLYST</span>' : ""}${esc(t.main)}</div>
+        <div class="m">${hm(e._start)}–${hm(e._end)}${t.sub ? " · " + esc(t.sub) : ""}</div>
+        ${e.location ? `<div class="m room">${esc(e.location)}</div>` : ""}</button>`;
+    }
+    if (ymd(d) === todayKey) {
+      const n = new Date(), mins = (n.getHours() - startH) * 60 + n.getMinutes();
+      if (mins >= 0 && mins <= (endH - startH) * 60) html += `<div class="now" style="top:${mins / 60 * HOUR}px"></div>`;
+    }
+    html += `</div>`;
+  }
+  cal.innerHTML = html + `</div></div>`;
+}
+function layoutColumns(list) {
+  let cluster = [], clusterEnd = null;
+  const flush = () => { const cols = Math.max(...cluster.map(e => e._col)) + 1; cluster.forEach(e => e._cols = cols); cluster = []; };
+  for (const e of list) {
+    if (clusterEnd && e._start >= clusterEnd) { flush(); clusterEnd = null; }
+    const used = new Set(cluster.filter(o => o._end > e._start).map(o => o._col));
+    let col = 0; while (used.has(col)) col++;
+    e._col = col; cluster.push(e);
+    clusterEnd = !clusterEnd || e._end > clusterEnd ? e._end : clusterEnd;
+  }
+  if (cluster.length) flush();
+}
+
+// ---------------------------------------------------------------------------
+// Lesson details (click outside or press Esc to close)
+// ---------------------------------------------------------------------------
+function openSheet(e) {
+  const g = GROUPS.get(e.group), c = colours(g.code), t = displayTitle(e);
+  const day = d => d.toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long"});
+  const when = e.all_day ? `${day(e._start)}${(e._end - e._start) > 864e5 ? " – " + day(addDays(e._end, -1)) : ""} · all day`
+                         : `${day(e._start)} · ${hm(e._start)}–${hm(e._end)}`;
+  const notes = cleanNotes(e);
+  $("sheet").innerHTML = `<div class="swatch" style="background:${c.bar}"></div>
+    <h2 id="sheet-title">${e.cancelled ? '<span class="badge">AFLYST</span>' : ""}${esc(t.main)}</h2>
+    <div class="when">${esc(when)}</div>
+    <dl>${t.sub ? `<dt>Subject</dt><dd>${esc(t.sub)}</dd>` : ""}${e.course ? `<dt>Course</dt><dd>${esc(e.course)}</dd>` : ""}
+      ${e.teacher ? `<dt>Teacher</dt><dd>${esc(e.teacher)}</dd>` : ""}${e.location ? `<dt>Room</dt><dd>${esc(e.location)}</dd>` : ""}</dl>
+    ${notes ? `<div class="notes">${esc(notes)}</div>` : ""}
+    <div class="hint">Click outside or press Esc to close</div>`;
+  openLayer("sheet");
+}
+function openLayer(id) { closeLayers(); $(id).scrollTop = 0; $(id).classList.add("open"); $("scrim").classList.add("open"); }
+function closeLayers() { ["sheet", "dialog", "filters"].forEach(id => $(id).classList.remove("open")); $("scrim").classList.remove("open"); }
+function toast(text, ms = 2600) { const t = $("toast"); t.textContent = text; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), ms); }
+
+// ---------------------------------------------------------------------------
+// Adding to a calendar. Each student gets a personal iCal link that carries
+// their switch choices (&on=…&off=… on top of the default rule). Calendar
+// apps fetch the link themselves and keep it up to date.
+// ---------------------------------------------------------------------------
+const GOOGLE_ADD_BY_URL = "https://calendar.google.com/calendar/u/0/r/settings/addbyurl";
+const className = () => DATA?.class_name || "";
+const calendarName = () => className() ? `${className()} timetable` : "Class timetable";
+const isLocal = () => ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname) || location.protocol !== "https:";
+function subscriptionUrl() {
+  const known = id => GROUPS.has(id);
+  const on = [...overrides.on].filter(known), off = [...overrides.off].filter(known);
+  return `${location.origin}${API}/schedule.ics?key=${encodeURIComponent(KEY)}&v=2`
+    + (on.length ? `&on=${on.join(",")}` : "") + (off.length ? `&off=${off.join(",")}` : "");
+}
+const webcalUrl = () => subscriptionUrl().replace(/^https?:/, "webcal:");
+const googleQuickAddUrl = () => `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcalUrl())}`;
+async function copyText(text) { try { await navigator.clipboard.writeText(text); return true; } catch { return false; } }
+function selectionSummary() {
+  const on = kind => [...GROUPS.values()].filter(g => g.kind === kind && !hidden.has(g.id)).length;
+  const n = on("course"), m = on("event");
+  return `${n} subject${n === 1 ? "" : "s"}${m ? ` and ${m} school/club event${m === 1 ? "" : "s"}` : ""}`;
+}
+function linkBox() {
+  return `<div class="linkbox"><input id="icsLink" readonly value="${esc(subscriptionUrl())}" aria-label="Your personal calendar link">
+    <button class="btn" id="copyAgain">Copy</button></div>`;
+}
+function wireLinkBox() {
+  $("icsLink").onclick = e => e.target.select();
+  $("copyAgain").onclick = async () => {
+    const ok = await copyText(subscriptionUrl());
+    $("copyAgain").textContent = ok ? "Copied ✓" : "Select & copy";
+    if (!ok) $("icsLink").select();
+  };
+}
+function localNotice() {
+  return `<p class="note warn"><b>This page is running on your own computer</b> (${esc(location.host)}), which Google
+    can't reach. The link only works once the calendar runs at its online address (https://….workers.dev).</p>`;
+}
+
+async function addToGoogle() {
+  const copied = await copyText(subscriptionUrl());
+  $("dialog").innerHTML = `<h2>Add your timetable to Google Calendar</h2>
+    ${isLocal() ? localNotice() : ""}
+    <ol class="steps">
+      <li><b>${copied ? "Your personal link is copied ✓" : "Copy your personal link"}</b>
+        <span>It contains ${selectionSummary()}: exactly what's switched on in the list.</span>${linkBox()}</li>
+      <li><b>Open Google Calendar's “From URL” page on a computer</b>
+        <span>Use a laptop or desktop browser. The Google Calendar phone app can't add a calendar from a link.
+          Sign in with the Google account you want the timetable in.</span>
+        <a class="btn primary step-btn" href="${GOOGLE_ADD_BY_URL}" target="_blank" rel="noopener noreferrer">Open Google Calendar ↗</a></li>
+      <li><b>Paste the link</b>
+        <span>Click the <i>URL of calendar</i> box and paste: <kbd>Ctrl</kbd>+<kbd>V</kbd> on Windows, <kbd>⌘</kbd>+<kbd>V</kbd> on a Mac.
+          Leave <i>Make the calendar publicly accessible</i> unticked.</span></li>
+      <li><b>Click “Add calendar”</b>
+        <span>After a few seconds <b>${esc(calendarName())}</b> appears in the left sidebar under <i>Other calendars</i>.
+          The lessons can take a minute to show up.</span></li>
+      <li><b>Optional: choose a colour or rename it</b>
+        <span>Hover over the calendar's name in the sidebar, click <b>⋮</b> and pick a colour. Choose <i>Settings</i> there to rename it.</span></li>
+      <li><b>See it on your phone</b>
+        <span>It appears in the Google Calendar app on its own. If it doesn't: on Android open the app → ☰ → <i>Settings</i> → tap the
+          calendar → turn on <i>Sync</i>. On an iPhone that shows Google calendars in Apple's Calendar app, open
+          <a href="https://calendar.google.com/calendar/syncselect" target="_blank" rel="noopener noreferrer">calendar.google.com/calendar/syncselect</a>,
+          tick the calendar and press <i>Save</i>.</span></li>
+    </ol>
+    <div class="note"><b>Good to know</b><ul>
+      <li>Google refreshes subscribed calendars by itself, usually every few hours and sometimes up to a day later, so Lectio changes appear with a delay.</li>
+      <li>Changed your subjects? Switch them here, then in Google Calendar remove the old one (<b>⋮</b> → <i>Settings</i> → <i>Remove calendar</i> → <i>Unsubscribe</i>) and add your new link.</li>
+      <li>The link is made for your choices. Classmates should open this page and make their own.</li>
+      ${isLocal() ? "" : `<li>Shortcut: <a href="${esc(googleQuickAddUrl())}" target="_blank" rel="noopener noreferrer">open Google Calendar with the link filled in</a>, then click <i>Add</i>.</li>`}
+    </ul></div>
+    <div class="row"><button class="btn ghost" id="otherApps">Apple Calendar or Outlook instead</button><button class="btn" data-close>Done</button></div>`;
+  openLayer("dialog");
+  wireLinkBox();
+  $("otherApps").onclick = showOtherApps;
+}
+
+async function showOtherApps() {
+  const copied = await copyText(subscriptionUrl());
+  $("dialog").innerHTML = `<h2>Other calendar apps</h2>
+    ${isLocal() ? localNotice() : ""}
+    <p>${copied ? "Your personal link is copied ✓" : "Copy your personal link:"} It contains ${selectionSummary()}.</p>
+    ${linkBox()}
+    ${isLocal() ? "" : `<a class="way" href="${esc(webcalUrl())}"><span class="ic">⚡</span>
+      <div><b>Open in my calendar app</b><span>Works with Apple Calendar on Mac and iPhone, and Outlook on Windows</span></div></a>`}
+    <ol class="steps compact">
+      <li><b>Apple Calendar on a Mac</b><span><i>File</i> → <i>New Calendar Subscription…</i> → paste → <i>Subscribe</i>.
+        Set <i>Auto-refresh</i> to <i>Every hour</i>, then <i>OK</i>.</span></li>
+      <li><b>iPhone / iPad</b><span><i>Settings</i> → <i>Apps</i> → <i>Calendar</i> → <i>Calendar Accounts</i> → <i>Add Account</i> → <i>Other</i> →
+        <i>Add Subscribed Calendar</i> → paste → <i>Next</i> → <i>Save</i>. (On older iOS: <i>Settings</i> → <i>Calendar</i> → <i>Accounts</i>.)</span></li>
+      <li><b>Outlook (web or new Outlook for Windows)</b><span><i>Calendar</i> → <i>Add calendar</i> → <i>Subscribe from web</i> → paste →
+        give it a name → <i>Import</i>.</span></li>
+    </ol>
+    <div class="row"><button class="btn ghost" id="backToGoogle">Google Calendar instructions</button><button class="btn" data-close>Done</button></div>`;
+  openLayer("dialog");
+  wireLinkBox();
+  $("backToGoogle").onclick = addToGoogle;
+}
+
+// ---------------------------------------------------------------------------
+// Theme switch (remembers your choice; otherwise follows the device)
+// ---------------------------------------------------------------------------
+function syncThemeButton() { $("theme").classList.toggle("is-dark", isDark()); $("theme").setAttribute("aria-checked", isDark()); }
+$("theme").onclick = () => {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("lectio-theme", next); } catch {}
+  syncThemeButton(); if (EVENTS.length) { renderFilters(); render(); }
+};
+media.addEventListener("change", () => { syncThemeButton(); if (EVENTS.length) { renderFilters(); render(); } });
+syncThemeButton();
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+document.addEventListener("click", ev => {
+  if (ev.target.closest("[data-close]")) return closeLayers();
+  const target = ev.target.closest("[data-id]");
+  if (target) return openSheet(EVENTS[Number(target.dataset.id)]);
+  const tab = ev.target.closest("[data-day]");
+  if (tab) { mobileDay = tab.dataset.day; render(); }
+});
+$("scrim").onclick = closeLayers;
+$("filterBtn").onclick = () => openLayer("filters");
+$("subscribe").onclick = addToGoogle;
+$("moreWays").onclick = showOtherApps;
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") return closeLayers();
+  if (e.target.closest("input,textarea") || $("scrim").classList.contains("open")) return;
+  if (e.key === "ArrowLeft") $("prev").click();
+  if (e.key === "ArrowRight") $("next").click();
+  if (e.key.toLowerCase() === "t") $("today").click();
+});
+$("prev").onclick = () => { weekStart = addDays(weekStart, -7); mobileDay = null; render(); };
+$("next").onclick = () => { weekStart = addDays(weekStart, 7); mobileDay = null; render(); };
+$("today").onclick = () => { weekStart = mondayOf(new Date()); mobileDay = null; render(); scrollToNow(); };
+let lastWidth = innerWidth;
+addEventListener("resize", () => { if ((innerWidth <= 720) !== (lastWidth <= 720)) render(); lastWidth = innerWidth; });
+function scrollToNow() { const s = $("scroll"), now = document.querySelector(".now"); if (s && now) s.scrollTop = Math.max(0, now.offsetTop - 120); }
+
+async function load() {
+  try {
+    if (!KEY) throw new Error("This link is missing its key. Use the full calendar link (it ends in #key=…).");
+    const r = await fetch(`${API}/events.json`, {cache: "no-cache", headers: {Authorization: `Bearer ${KEY}`}});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `Server returned HTTP ${r.status}`);
+    const first = !DATA;
+    DATA = data;
+    EVENTS = data.events.map((e, i) => ({...e, _idx: i, _start: parseLocal(e.start), _end: parseLocal(e.end)}));
+    buildGroups();
+    const synced = new Date(data.last_synced), stale = Date.now() - synced > 36e5;
+    $("sync").innerHTML = `<span class="dot ${stale ? "stale" : ""}"></span>Synced from Lectio ${esc(synced.toLocaleString("en-GB", {weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}))}${stale ? " — may be out of date" : ""}`;
+    if (first && !EVENTS.some(e => e._end > weekStart && e._start < addDays(weekStart, 7)) && EVENTS.length) weekStart = mondayOf(EVENTS[0]._start);
+    if (className()) document.title = `${className()} timetable`;
+    renderFilters(); render(); if (first) scrollToNow();
+  } catch (err) {
+    $("heading").textContent = "Timetable unavailable";
+    $("cal").innerHTML = `<div class="state">${esc(err.message)}</div>`;
+  }
+}
+load();
+setInterval(load, 15 * 60 * 1000);
+</script>
+</body>
+</html>

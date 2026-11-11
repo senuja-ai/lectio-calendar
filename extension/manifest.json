@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Lectio Class Calendar Bridge",
+  "version": "3.0.0",
+  "minimum_chrome_version": "120",
+  "description": "Reads your class timetable from your signed-in Lectio session and keeps your class calendar server up to date.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://www.lectio.dk/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "content_scripts": [{"matches": ["https://www.lectio.dk/lectio/*"], "js": ["parser.js", "content.js"], "run_at": "document_idle"}],
+  "action": {"default_popup": "popup.html", "default_title": "Lectio class calendar"}
+}

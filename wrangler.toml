@@ -1,0 +1,24 @@
+# Cloudflare Worker configuration. See README.md → "Put it online".
+name = "lectio-calendar"
+main = "worker/index.js"
+compatibility_date = "2026-11-01"
+
+# The calendar page (worker/public/calendar.html). The Worker serves it itself
+# so it can add security headers.
+[assets]
+directory = "worker/public"
+binding = "ASSETS"
+run_worker_first = true
+
+# Stores the latest timetable. Create it with:
+#   npx wrangler kv namespace create TIMETABLE
+# and paste the id it prints below.
+[[kv_namespaces]]
+binding = "TIMETABLE"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+
+# Weeks to include around the current one. SCHOOL_ID, CLASS_ID, UPLOAD_TOKEN
+# and FEED_TOKEN are secrets: set them with `npx wrangler secret put NAME`.
+[vars]
+PAST_WEEKS = "1"
+FUTURE_WEEKS = "4"

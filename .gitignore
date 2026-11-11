@@ -1,0 +1,6 @@
+# Dependencies and local Cloudflare state
+node_modules/
+.wrangler/
+# Local secrets for `wrangler dev` (never commit)
+.dev.vars
+.env

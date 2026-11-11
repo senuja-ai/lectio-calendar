@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lectio class calendar</title>
+<style>
+body{font:14px system-ui;width:340px;padding:18px;color:#17314a;background:#f6f8fb}h1{font-size:20px;margin:0 0 12px}
+label{display:block;margin-top:12px;font-weight:600}input{box-sizing:border-box;width:100%;padding:8px;margin-top:4px;border:1px solid #aab9ca;border-radius:5px}
+button{margin-top:16px;padding:10px;width:100%;border:0;border-radius:6px;background:#135da8;color:white;font-weight:600;cursor:pointer}button:disabled{opacity:.5}
+p{line-height:1.5}#status{white-space:pre-wrap}
+#view{display:block;margin-top:14px;padding:10px;text-align:center;border-radius:6px;border:1px solid #135da8;color:#135da8;font-weight:600;text-decoration:none}
+#view[hidden],#shareBox[hidden]{display:none}small{display:block;margin-top:8px;color:#496078}
+.row{display:flex;gap:6px}.row input{font-size:11px}.row button{width:auto;margin-top:4px;padding:6px 10px;background:#e7eef7;color:#135da8}
+</style></head><body>
+<h1>Lectio class calendar</h1>
+<p>Sign in to Lectio in another tab. The extension reads your class timetable there and updates the class calendar.</p>
+<label for="base">Calendar server</label><input id="base" type="url" placeholder="https://lectio-calendar.yourname.workers.dev">
+<label for="key">Upload key</label><input id="key" type="password" autocomplete="off" placeholder="UPLOAD_TOKEN">
+<small>The key you set on the server, not your Lectio password.</small>
+<button id="sync">Save and sync</button>
+<p id="status" role="status">Not synchronized yet.</p>
+<a id="view" href="#" target="_blank" rel="noreferrer" hidden>Open calendar page ↗</a>
+<div id="shareBox" hidden>
+  <label for="share">Link to share with your class</label>
+  <div class="row"><input id="share" readonly><button id="copyShare">Copy</button></div>
+  <small>Classmates open this page, pick their subjects and add their own calendar link.</small>
+</div>
+<script src="popup.js"></script></body></html>

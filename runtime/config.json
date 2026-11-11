@@ -1,0 +1,10 @@
+{
+  "school_id": 21,
+  "class_id": 72621311909,
+  "upload_token": "9I6dEeyIjeSmokWtsHVq1L0prmpKBMFYnShFU-O1oVk",
+  "feed_token": "Fdv6KnoWzsuanoVRqZzX0gXX2Z9FbSDMSromlWQyENs",
+  "database": "C:\\Users\\senuj\\pythonspace\\lectio_calendar\\runtime\\calendar.sqlite3",
+  "past_weeks": 1,
+  "future_weeks": 2,
+  "google_client_id": "427748928236-k7d1n9p5lp2gqosfk6grvjd92muaolt0.apps.googleusercontent.com"
+}
